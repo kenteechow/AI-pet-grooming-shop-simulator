@@ -741,6 +741,8 @@ dt{color:var(--muted)}dd{margin:0}
 #game .rleft h4,#game .p-body h4{margin:14px 0 6px;font-size:13px}
 #game .story-pick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
 #game .story-pick select{flex:1 1 260px;min-width:0;max-width:100%;padding:7px 10px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--ink);border:1px solid rgba(255,255,255,.15);font:inherit}
+#game .story-pick select option{background:#263743;color:#f3f7fa}
+#game .story-pick select option:checked{background:#405c68;color:#fff}
 #game .story-pick label{flex-basis:100%}
 #game .story-pick input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;padding:7px 10px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--ink);border:1px solid rgba(255,255,255,.15);font:inherit}
 #game .staff-shifts{margin:12px 0;padding:10px;border-radius:12px;background:rgba(255,255,255,.04)}
@@ -3039,6 +3041,19 @@ function actor(key,mk){var a=W3.actors[key];if(!a){a=mk();W3.sc.add(a);W3.actors
 function moveTo(a,p,dt,inst,v){var d=p.clone().sub(a.position);d.y=0;var len=d.length(),sp=(v||staffV())*dt,moved=0;
  if(inst||len>12){a.position.copy(p);}else if(len<=sp){moved=len;a.position.copy(p);}else{moved=sp;a.position.add(d.normalize().multiplyScalar(sp));a.position.y=p.y;turnTo(a,Math.atan2(d.x,d.z),dt);}
  if(a.userData.legs)stride(a,moved,dt);}
+/* 人物用水平圓形碰撞體；樓上同街道分開計，避免不同樓層互相推開。 */
+function separatePeople(){var people=[],origin={};Object.keys(W3.actors).sort().forEach(function(k){var a=W3.actors[k],p=a.userData.pick;if(a.visible&&a.userData.alive===W3.frame&&p&&(p.type==='staff'||p.type==='owner')){people.push(a);if(/^w/.test(k))origin[k]=a.position.clone();}});
+ (W3.peds||[]).concat(W3.cross||[]).forEach(function(a){if(a.visible)people.push(a);});
+ var minDist=.82;for(var pass=0;pass<16;pass++){var changed=false;
+  for(var i=0;i<people.length;i++)for(var j=i+1;j<people.length;j++){var a=people[i].position,b=people[j].position;if(Math.abs(a.y-b.y)>1)continue;var dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);if(d>=minDist)continue;
+   if(d<.0001){var angle=((i*17+j*31)%32)*Math.PI/16;dx=Math.cos(angle);dz=Math.sin(angle);d=1;}else{dx/=d;dz/=d;}
+   var push=(minDist-Math.min(d,minDist))/2;if(push<.0001)push=minDist/2;
+   a.x-=dx*push;a.z-=dz*push;b.x+=dx*push;b.z+=dz*push;
+   [a,b].forEach(function(p){if(p.y>2){p.x=clamp(p.x,-4.45,4.45);p.z=clamp(p.z,-9.45,-.52);}});changed=true;
+  }if(!changed)break;
+ }
+ Object.keys(origin).forEach(function(k){var a=W3.actors[k],pet=W3.actors['q'+k.slice(1)],dx=a.position.x-origin[k].x,dz=a.position.z-origin[k].z;a.userData.collisionX=(a.userData.collisionX||0)+dx;a.userData.collisionZ=(a.userData.collisionZ||0)+dz;var prev=a.userData.collisionPrev;if(prev&&Math.abs(prev.y-a.position.y)<1){var mx=a.position.x-prev.x,mz=a.position.z-prev.z,dist=Math.hypot(mx,mz);if(dist>.001&&dist<1)a.rotation.y=Math.atan2(mx,mz);}if(!pet||!pet.visible||pet.userData.alive!==W3.frame)return;pet.position.x+=dx;pet.position.z+=dz;if(pet.position.y>2){pet.position.x=clamp(pet.position.x,-4.45,4.45);pet.position.z=clamp(pet.position.z,-9.45,-.52);}});
+}
 function syncShop(dt){
  W3.frame=(W3.frame||0)+1;if(s&&!s.paused&&!s.modal)trackRate(dt);if(s.floorG){Object.keys(W3.actors).forEach(function(k){W3.actors[k].visible=false;});return;}var V=shopView(),t=s.t,ap=V?V.appts:todayAppts(),gs=V?V.gs:groomers(),busyTab={},cageI=0;
  W3.table3.visible=s.base.tables>=3;
@@ -3077,9 +3092,11 @@ function syncShop(dt){
   var pick=J===(W3.jr||{})['k'+a.id];
   var o=actor(kw,function(){var m=makePerson({i:a.id,long:a.id%2});m.userData.pick={type:'owner',id:a.id};return m;});
   o.userData.label=a.owner+(J.abort?' · 取消咗預約':'');o.userData.lh=1.5;
-  var prev=o.position.clone(),jump=prev.distanceTo(J.pos)>2.5||!o.userData.walked;o.position.copy(J.pos);o.userData.walked=1;
-  var moved=jump?0:Math.hypot(J.pos.x-prev.x,J.pos.z-prev.z);
-  if(J.st==='desk')turnTo(o,Math.PI,dt);else if(jump)o.rotation.y=Math.atan2(J.dir.x,J.dir.z);else if(moved>1e-4)turnTo(o,Math.atan2(J.pos.x-prev.x,J.pos.z-prev.z),dt);
+  var prev=o.position.clone(),jump=prev.distanceTo(J.pos)>2.5||!o.userData.walked;o.userData.collisionPrev=prev;if(jump){o.userData.collisionX=0;o.userData.collisionZ=0;}
+  var ease=Math.max(0,1-dt*1.5);o.userData.collisionX=(o.userData.collisionX||0)*ease;o.userData.collisionZ=(o.userData.collisionZ||0)*ease;
+  o.position.copy(J.pos);o.position.x+=o.userData.collisionX;o.position.z+=o.userData.collisionZ;o.userData.walked=1;
+  var moved=jump?0:Math.hypot(o.position.x-prev.x,o.position.z-prev.z);
+  if(J.st==='desk')turnTo(o,Math.PI,dt);else if(jump)o.rotation.y=Math.atan2(J.dir.x,J.dir.z);else if(moved>1e-4)turnTo(o,Math.atan2(o.position.x-prev.x,o.position.z-prev.z),dt);
   stride(o,moved,dt);
   /* 狗跟喺主人後面少少：落狗嗰程到前台之前、接狗嗰程離開前台之後 */
   if(J.st==='phone'&&o.userData.arms){o.userData.arms[1].rotation.x=-2.5;o.userData.arms[1].rotation.z=.35;}else if(o.userData.arms)o.userData.arms[1].rotation.z=0;
@@ -3111,6 +3128,7 @@ function syncShop(dt){
   moveTo(m,p,dt);if(ap2&&!lunch)m.rotation.y=Math.PI;
  });
  Object.keys(W3.actors).forEach(function(k){var a=W3.actors[k];if(a.userData.alive!==W3.frame){a.visible=false;if(/^v?[poqw]/.test(k)){if(W3.frame-a.userData.alive>600){W3.sc.remove(a);W3.pick.splice(W3.pick.indexOf(a),1);delete W3.actors[k];}}}});
+ separatePeople();
 }
 
 /* p_merge：將靜態方塊（共用顏色材質）合併成每種顏色一個 mesh，大幅減少 draw call，令畫面流暢。 */
@@ -4822,7 +4840,8 @@ function pExp(){var H=s.S.hist,cur=H[H.length-1]||{},old=H.length>4?H[H.length-5
 /* ---------- 毛孩故事：真係嚟過、有紀錄嘅毛孩 ---------- */
 function storyPets(){if(!s.cl)return [];var L=[];for(var k in s.cl.pets){var p=s.cl.pets[k];if(p.cnt&&p.cnt.done>0)L.push(p);}
  return L.sort(function(a,b){var na=a.notes.length+(a.reports||[]).length,nb=b.notes.length+(b.reports||[]).length;return (nb>0)-(na>0)||(b.last||0)-(a.last||0);});}
-var storyUI={q:'',filter:'all',page:0},STORY_PAGE=20;
+var storyUI={q:'',filter:'all',breed:'',page:0},STORY_PAGE=20;
+function storyMatch(p){var q=storyUI.q.trim().toLowerCase(),o=clOwner(p.oid),rec=p.notes.length+(p.reports||[]).length;return (!q||[p.name,p.breed,p.id,o&&o.name].join(' ').toLowerCase().indexOf(q)>=0)&&(!storyUI.breed||p.breed===storyUI.breed)&&(storyUI.filter==='all'||(storyUI.filter==='records'&&rec>0)||(storyUI.filter==='repeat'&&p.cnt.done>1));}
 function storyHTML(p){var o=clOwner(p.oid),g=SEGS.filter(function(x){return x.id===p.seg;})[0],ev={},add=function(d,h){(ev[d]=ev[d]||[]).push(h);},n=0;
  p.visits.slice().sort(function(a,b){return a.day-b.day||(a.t||0)-(b.t||0);}).forEach(function(v){
   if(v.st==='done'){n++;var h='<span class="story-tag">第 '+n+' 次到店 · '+hm(v.t||0)+'</span><h3>'+(SVC[v.svc]?SVC[v.svc].n:'')+' · '+esc(v.gname||'')+'</h3><p>收費 '+hk(v.price||0)+'。</p>';
@@ -4839,18 +4858,18 @@ function storyHTML(p){var o=clOwner(p.oid),g=SEGS.filter(function(x){return x.id
   '<div class="stl-day"><div class="stl-date">之後</div><div class="story-content">'+(nx?'<span class="story-tag">下次預約</span><p>'+dateStr(nx.day).replace(/^\d+年/,'')+' '+hm(nx.a)+' · '+(SVC[nx.svc]?SVC[nx.svc].n:'')+'</p>':'<span class="story-tag">未有下次預約</span><p>'+(due!=null?'按 '+g.name+' 嘅週期，大約 '+dateStr(due).replace(/^\d+年/,'')+' 到期。'+((s.lv.recall||0)>=1?'「回」會提醒主人。':'冇開「回」，要靠主人自己記得。'):'')+'</p>')+'</div></div></div>';}
 function petStoryReal(){var all=storyPets();
  if(s.storyDemo||s.demo||!all.length)return (all.length&&!s.demo?'<button class="tback" data-act="storyreal">‹ 返去真實毛孩</button>':'')+petStory()+(!all.length?'<p class="note">完成第一隻服務之後，呢度會改為顯示真係嚟過嘅毛孩故事。</p>':'');
- var q=storyUI.q.trim().toLowerCase(),L=all.filter(function(p){var o=clOwner(p.oid),rec=p.notes.length+(p.reports||[]).length;return (!q||[p.name,p.breed,p.id,o&&o.name].join(' ').toLowerCase().indexOf(q)>=0)&&(storyUI.filter==='all'||(storyUI.filter==='records'&&rec>0)||(storyUI.filter==='repeat'&&p.cnt.done>1));});
+ var breeds=all.map(function(p){return p.breed;}).filter(function(x,i,L){return x&&L.indexOf(x)===i;}).sort(function(a,b){return a.localeCompare(b,'zh-Hant');});if(storyUI.breed&&breeds.indexOf(storyUI.breed)<0)storyUI.breed='';var L=all.filter(storyMatch);
  storyUI.page=Math.min(storyUI.page,Math.max(0,Math.ceil(L.length/STORY_PAGE)-1));var page=L.slice(storyUI.page*STORY_PAGE,(storyUI.page+1)*STORY_PAGE),cur=page.filter(function(p){return p.id===s.storyPid;})[0]||page[0];if(cur)s.storyPid=cur.id;
  var i=L.indexOf(cur),lab=function(p){var rec=p.notes.length+(p.reports||[]).length;return esc(p.name)+'（'+esc(p.breed)+'）· '+p.cnt.done+' 次'+(rec?' · '+rec+' 條紀錄':'')+' · 上次 '+dateStr(p.last).replace(/^\d+年/,'');};
- var controls='<div class="story-pick"><label for="storySearch">搜尋毛孩、主人或品種</label><input id="storySearch" data-act="storysearch" value="'+esc(storyUI.q)+'" placeholder="輸入名稱或品種"><select data-act="storyfilter" aria-label="篩選毛孩"><option value="all"'+(storyUI.filter==='all'?' selected':'')+'>全部</option><option value="records"'+(storyUI.filter==='records'?' selected':'')+'>有觀察或報告</option><option value="repeat"'+(storyUI.filter==='repeat'?' selected':'')+'>到店多於一次</option></select><span class="note">符合 '+L.length+'／'+all.length+' 隻'+(L.length?' · 第 '+(storyUI.page+1)+'／'+Math.ceil(L.length/STORY_PAGE)+' 頁':'')+'</span>';
+ var controls='<div class="story-pick"><label for="storySearch">搜尋毛孩、主人或品種</label><input id="storySearch" data-act="storysearch" value="'+esc(storyUI.q)+'" placeholder="輸入名稱或品種"><select data-act="storyfilter" aria-label="篩選毛孩"><option value="all"'+(storyUI.filter==='all'?' selected':'')+'>全部紀錄</option><option value="records"'+(storyUI.filter==='records'?' selected':'')+'>有觀察或報告</option><option value="repeat"'+(storyUI.filter==='repeat'?' selected':'')+'>到店多於一次</option></select><select data-act="storybreed" aria-label="篩選品種"><option value="">全部品種</option>'+breeds.map(function(b){return '<option value="'+esc(b)+'"'+(storyUI.breed===b?' selected':'')+'>'+esc(b)+'</option>';}).join('')+'</select><span class="note">符合 '+L.length+'／'+all.length+' 隻'+(L.length?' · 第 '+(storyUI.page+1)+'／'+Math.ceil(L.length/STORY_PAGE)+' 頁':'')+'</span>';
  if(cur)controls+='<select id="storySel" data-act="storysel" aria-label="選擇毛孩">'+page.map(function(p){return '<option value="'+p.id+'"'+(p.id===cur.id?' selected':'')+'>'+lab(p)+'</option>';}).join('')+'</select><button class="btn" data-act="storypage" data-page="'+(storyUI.page-1)+'"'+(storyUI.page===0?' disabled':'')+'>上一頁</button><button class="btn" data-act="storypage" data-page="'+(storyUI.page+1)+'"'+((storyUI.page+1)*STORY_PAGE>=L.length?' disabled':'')+'>下一頁</button><button class="btn" data-act="storypet" data-p="'+L[(i-1+L.length)%L.length].id+'">‹ 上一隻</button><button class="btn" data-act="storypet" data-p="'+L[(i+1)%L.length].id+'">下一隻 ›</button>';
  return controls+'<button class="btn" data-act="storydemo">示範故事（虛構）</button></div>'+(cur?storyHTML(cur):'<p class="note">搵唔到符合條件嘅毛孩，試下更改搜尋或篩選。</p>');}
 if(typeof pCust==='function'){var _effCust=pCust;pCust=function(sub){if(sub==='exp')return pExp();if(sub==='story')return petStoryReal();return _effCust.apply(this,arguments);};}
 if(typeof SUBS!=='undefined'&&SUBS.cust&&!SUBS.cust.some(function(x){return x[0]==='exp';}))SUBS.cust.splice(1,0,['exp','體驗']);
 if(typeof document!=='undefined')document.addEventListener('input',function(e){if(!e.target.matches('[data-act=storysearch]')||!s)return;var pos=e.target.selectionStart;storyUI.q=e.target.value;storyUI.page=0;renderPanel();var input=document.querySelector('[data-act=storysearch]');if(input){input.focus();input.setSelectionRange(pos,pos);}});
-if(typeof document!=='undefined')document.addEventListener('change',function(e){if(!s)return;if(e.target.matches('[data-act=storyfilter]')){storyUI.filter=e.target.value;storyUI.page=0;renderPanel();}else if(e.target.matches('[data-act=storysel]')){s.storyPid=e.target.value;s.storyDemo=0;e.target.blur();renderPanel();}});
+if(typeof document!=='undefined')document.addEventListener('change',function(e){if(!s)return;if(e.target.matches('[data-act=storyfilter]')){storyUI.filter=e.target.value;storyUI.page=0;renderPanel();}else if(e.target.matches('[data-act=storybreed]')){storyUI.breed=e.target.value;storyUI.page=0;renderPanel();}else if(e.target.matches('[data-act=storysel]')){s.storyPid=e.target.value;s.storyDemo=0;e.target.blur();renderPanel();}});
 if(typeof document!=='undefined')document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el||!s)return;var a=el.getAttribute('data-act');
- if(a==='storypage'){storyUI.page=Number(el.getAttribute('data-page'));s.storyPid=null;renderPanel();}if(a==='storypet'){s.storyPid=el.getAttribute('data-p');var list=storyPets(),target=list.filter(function(p){return p.id===s.storyPid;})[0];if(target){var q=storyUI.q.trim().toLowerCase();list=list.filter(function(p){var o=clOwner(p.oid),rec=p.notes.length+(p.reports||[]).length;return (!q||[p.name,p.breed,p.id,o&&o.name].join(' ').toLowerCase().indexOf(q)>=0)&&(storyUI.filter==='all'||(storyUI.filter==='records'&&rec>0)||(storyUI.filter==='repeat'&&p.cnt.done>1));});storyUI.page=Math.floor(list.indexOf(target)/STORY_PAGE);}s.storyDemo=0;renderPanel();}if(a==='storydemo'){s.storyDemo=1;s.petStory=0;renderPanel();}if(a==='storyreal'){s.storyDemo=0;renderPanel();}});
+ if(a==='storypage'){storyUI.page=Number(el.getAttribute('data-page'));s.storyPid=null;renderPanel();}if(a==='storypet'){s.storyPid=el.getAttribute('data-p');var list=storyPets().filter(storyMatch),target=list.filter(function(p){return p.id===s.storyPid;})[0];if(target)storyUI.page=Math.floor(list.indexOf(target)/STORY_PAGE);s.storyDemo=0;renderPanel();}if(a==='storydemo'){s.storyDemo=1;s.petStory=0;renderPanel();}if(a==='storyreal'){s.storyDemo=0;renderPanel();}});
 
 /* p_main：開局選擇、遊戲主循環、快捷鍵、遊戲點擊分派。 */
 var GAME={on:false,last:0,hudT:0,panT:0,lastModal:null};
