@@ -761,6 +761,14 @@ dt{color:var(--muted)}dd{margin:0}
 #game .capacity-row{display:grid;grid-template-columns:minmax(130px,1.3fr) minmax(45px,2fr) 48px;align-items:center;gap:9px;margin:7px 0;font-size:12px}
 #game .capacity-row strong{text-align:right}
 #game .capacity-compare{margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05)}
+#game .staff-rows{display:grid;gap:3px;overflow-y:auto;overscroll-behavior:contain;max-height:200px;min-height:0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.28) transparent}
+#game .staff-scroll-hint{font-size:10px;color:var(--muted);font-weight:400}
+@media(min-width:861px){
+ #game .left-stack{position:absolute;z-index:6;left:max(12px,env(safe-area-inset-left,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px));width:328px;max-height:calc(100% - 200px);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;pointer-events:none}
+ #game .left-stack .hud-bl,#game .left-stack .guide,#game .left-stack .goalcard{position:relative;left:auto;right:auto;top:auto;bottom:auto;width:100%;box-sizing:border-box;pointer-events:auto}
+ #game .left-stack .hud-bl{min-height:0;flex:0 1 auto;grid-template-rows:auto minmax(0,1fr)}
+ #game .left-stack .guide,#game .left-stack .goalcard{flex:0 0 auto}
+}
 @media(max-width:520px){#game .staff-shift-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 #game .ain small.aieff{white-space:normal;overflow:visible;text-overflow:clip}
 #game .story-tl{display:grid;gap:10px;margin-top:10px}
@@ -3506,7 +3514,7 @@ var DOCK=[['sched','排','排程'],['cust','客','客人'],['staff','人','員�
 var PANEL={id:null,sub:null};
 function hudHTML(){
  return '<div id="view"></div><div id="labels"></div>'+
- '<div class="hud hud-tl" id="hudTL"></div><div class="hud hud-tr" id="hudTR"></div><div class="hud hud-bl" id="hudBL"></div>'+
+ '<div class="hud hud-tl" id="hudTL"></div><div class="hud hud-tr" id="hudTR"></div><div id="hudLeftStack" class="left-stack"><div id="guide" class="guide" role="region" aria-label="第一週目標" hidden></div><div id="goalCard" class="goalcard" hidden></div><div class="hud hud-bl" id="hudBL"></div></div>'+
  '<div class="hud hud-br"><button class="hbtn big" data-act="floor" id="btnFloor"></button><button class="hbtn big" data-act="ext" id="btnExt">建築外觀<small>睇屋頂同外牆</small></button><button class="hbtn" data-act="camreset">重設視角</button><button class="hbtn" data-act="settings" aria-label="設定（Esc）">設定</button></div>'+
  '<div class="hud news" id="news"></div><nav class="hud dock" id="dock" aria-label="管理面板"></nav>'+
  '<aside class="panel" id="panel" hidden></aside><div class="selcard" id="selCard" hidden></div><div class="democard" id="demoCard" hidden></div>'+
@@ -3529,7 +3537,9 @@ function renderHUD(){
   var shift=staffShift(x,s.day),status=!shift?'今日休息':x.role==='asst'?(s.t<shift.start?'兼職未到班':s.t>=shift.end?'兼職已收工':'兼職當值'):x.role==='owner'?'老闆':'全職';
   var tag='<i class="tg'+(x.leaving>=0?' red':'')+'">'+(x.leaving>=0?'離職中':status)+'</i>';
   return '<button class="wrow" data-act="panel" data-p="staff" title="'+(shift?'今日 '+hm(shift.start)+'–'+hm(shift.end):'今日休息')+'；撳開睇本週班表"><span class="nm">'+esc(x.name.replace('（老闆）',''))+tag+'</span><span class="bar '+cls+'"><i style="width:'+Math.min(100,r*100).toFixed(0)+'%"></i></span><span class="num">'+Math.round(hw.used)+'/'+Math.round(hw.avail)+'h</span></button>';}).join('');
- $('#hudBL').innerHTML='<div class="hbl-h"><b>本週工時</b><span>老闆行政 <b class="num">'+h.adminH.toFixed(1)+'</b> 小時</span></div>'+rows;
+ var hudBL=$('#hudBL'),oldRows=hudBL.querySelector('.staff-rows'),scroll=oldRows?oldRows.scrollTop:0;
+ var hudContent='<div class="hbl-h"><b>本週工時'+(activeStaff().length>6?' <small class="staff-scroll-hint">可捲動</small>':'')+'</b><span>老闆行政 <b class="num">'+h.adminH.toFixed(1)+'</b> 小時</span></div><div class="staff-rows" role="region" aria-label="員工工時列表" tabindex="0">'+rows+'</div>';
+ if(!oldRows||hudBL._h!==hudContent){var focused=oldRows&&oldRows.contains(document.activeElement)||document.activeElement===oldRows;hudBL.innerHTML=hudContent;hudBL._h=hudContent;var newRows=hudBL.querySelector('.staff-rows');newRows.scrollTop=scroll;if(focused)newRows.focus({preventScroll:true});}
  var ns=s.news.slice(0,2);
  $('#news').innerHTML=ns.map(function(n){return '<div><span class="num">'+(n.day===s.day?hm(n.t):dateStr(n.day).replace(/^\d+年/,''))+'</span><b>'+esc(n.who)+'</b>'+esc(n.txt)+'</div>';}).join('');
  renderDock();
