@@ -2953,8 +2953,8 @@ function pathAt(P,d){for(var i=1;i<P.length;i++){if(P[i].tp)continue;var a=P[i-1
  var e=P[P.length-1].p;return {p:e.clone(),dir:new THREE.Vector3(0,0,1),i:P.length-1};}
 function revPath(P){var R=[];for(var i=P.length-1;i>=0;i--)R.push({p:P[i].p,tp:i+1<P.length?P[i+1].tp:false});R[0].tp=false;return R;}
 /* 客人路線：街遠處 → 門口前面 → 樓梯口 →（樓梯）→ 1 樓門口 → 前台 */
-function custPath(a){var sx=a.id%2?-13:11,z=2.3+(a.id%3)*.55,V3=THREE.Vector3;
- return [{p:new V3(sx,.16,z)},{p:new V3(-4.15+(sx>0?.8:-.8),.16,1.5)},{p:new V3(-4.15,.16,.45)},{p:SP(SHOP.door[0],SHOP.door[1]),tp:true},{p:SP(SHOP.recep[0]+.3,SHOP.recep[1]+1.1)}];}
+function custPath(a){var sx=a.id%2?-13:11,z=2.3+(a.id%3)*.55,V3=THREE.Vector3,slot=a.id%3;
+ return [{p:new V3(sx,.16,z)},{p:new V3(-4.15+(sx>0?.8:-.8),.16,1.5+(slot-1)*.18)},{p:new V3(-4.15,.16,.45)},{p:SP(SHOP.door[0],SHOP.door[1]),tp:true},{p:SP(-3.3+slot*.9,-.82)}];}
 /* 一程客人：kind 'd' 落狗、'k' 接狗。返回 {st,pos,...}；st: wait0（未出發）in → desk → out → gone */
 function custTrip(a,kind,dt){
  /* 換咗一局（例如由初始界面背景局入新遊戲）或者過咗日，就清走舊嘅客人路程 */
@@ -3046,21 +3046,24 @@ function buildShop(sc){
 /* 世界座標（棟樓 group 喺 z −5） */
 function SP(x,z,y){return new THREE.Vector3(x,(y==null?SHOP.y+.2:y),z);}
 function actor(key,mk){var a=W3.actors[key];if(!a){a=mk();W3.sc.add(a);W3.actors[key]=a;W3.pick.push(a);a.userData.seen=1;}a.visible=true;a.userData.alive=W3.frame;return a;}
-function moveTo(a,p,dt,inst,v){var d=p.clone().sub(a.position);d.y=0;var len=d.length(),sp=(v||staffV())*dt,moved=0;
+function moveTo(a,p,dt,inst,v){var human=a.userData.pick&&(a.userData.pick.type==='staff'||a.userData.pick.type==='owner');if(human){a.userData.moveTarget=p.clone();var ease=Math.max(0,1-dt*.35);a.userData.avoidX=(a.userData.avoidX||0)*ease;a.userData.avoidZ=(a.userData.avoidZ||0)*ease;p=p.clone();p.x+=a.userData.avoidX;p.z+=a.userData.avoidZ;if(p.y>2){p.x=clamp(p.x,-4.45,4.45);p.z=clamp(p.z,-9.45,-.52);}}
+ var d=p.clone().sub(a.position);d.y=0;var len=d.length(),sp=(v||staffV())*dt,moved=0;
  if(inst||len>12){a.position.copy(p);}else if(len<=sp){moved=len;a.position.copy(p);}else{moved=sp;a.position.add(d.normalize().multiplyScalar(sp));a.position.y=p.y;turnTo(a,Math.atan2(d.x,d.z),dt);}
  if(a.userData.legs)stride(a,moved,dt);}
 /* 人物用水平圓形碰撞體；樓上同街道分開計，避免不同樓層互相推開。 */
-function separatePeople(){var people=[],origin={};Object.keys(W3.actors).sort().forEach(function(k){var a=W3.actors[k],p=a.userData.pick;if(a.visible&&a.userData.alive===W3.frame&&p&&(p.type==='staff'||p.type==='owner')){people.push(a);if(/^w/.test(k))origin[k]=a.position.clone();}});
- (W3.peds||[]).concat(W3.cross||[]).forEach(function(a){if(a.visible)people.push(a);});
- var minDist=.82;for(var pass=0;pass<16;pass++){var changed=false;
-  for(var i=0;i<people.length;i++)for(var j=i+1;j<people.length;j++){var a=people[i].position,b=people[j].position;if(Math.abs(a.y-b.y)>1)continue;var dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);if(d>=minDist)continue;
-   if(d<.0001){var angle=((i*17+j*31)%32)*Math.PI/16;dx=Math.cos(angle);dz=Math.sin(angle);d=1;}else{dx/=d;dz/=d;}
-   var push=(minDist-Math.min(d,minDist))/2;if(push<.0001)push=minDist/2;
-   a.x-=dx*push;a.z-=dz*push;b.x+=dx*push;b.z+=dz*push;
+function separatePeople(dt){var people=[],targets=[],keys=[];Object.keys(W3.actors).sort().forEach(function(k){var a=W3.actors[k],p=a.userData.pick;if(a.visible&&a.userData.alive===W3.frame&&p&&(p.type==='staff'||p.type==='owner')){people.push(a);keys.push(k);}});
+ (W3.peds||[]).concat(W3.cross||[]).forEach(function(a){if(a.visible){people.push(a);keys.push('');}});people.forEach(function(a){targets.push(a.position.clone());});
+ var minDist=.82;for(var pass=0;pass<12;pass++){var changed=false;
+  for(var i=0;i<people.length;i++)for(var j=i+1;j<people.length;j++){var a=targets[i],b=targets[j];if(Math.abs(a.y-b.y)>1)continue;var dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);if(d>=minDist)continue;
+   if(d<.0001){var angle=((i*17+j*31)%32)*Math.PI/16;dx=Math.cos(angle);dz=Math.sin(angle);d=0;}else{dx/=d;dz/=d;}
+   var ta=people[i].userData.moveTarget,tb=people[j].userData.moveTarget;
+   if(ta&&tb&&(ta.x-a.x)*dx+(ta.z-a.z)*dz>.1&&(tb.x-b.x)*dx+(tb.z-b.z)*dz<-.1){var sx=dx-dz*.7,sz=dz+dx*.7,sl=Math.hypot(sx,sz);dx=sx/sl;dz=sz/sl;}
+   var push=(minDist-d)/2;a.x-=dx*push;a.z-=dz*push;b.x+=dx*push;b.z+=dz*push;
    [a,b].forEach(function(p){if(p.y>2){p.x=clamp(p.x,-4.45,4.45);p.z=clamp(p.z,-9.45,-.52);}});changed=true;
   }if(!changed)break;
  }
- Object.keys(origin).forEach(function(k){var a=W3.actors[k],pet=W3.actors['q'+k.slice(1)],dx=a.position.x-origin[k].x,dz=a.position.z-origin[k].z;a.userData.collisionX=(a.userData.collisionX||0)+dx;a.userData.collisionZ=(a.userData.collisionZ||0)+dz;var prev=a.userData.collisionPrev;if(prev&&Math.abs(prev.y-a.position.y)<1){var mx=a.position.x-prev.x,mz=a.position.z-prev.z,dist=Math.hypot(mx,mz);if(dist>.001&&dist<1)a.rotation.y=Math.atan2(mx,mz);}if(!pet||!pet.visible||pet.userData.alive!==W3.frame)return;pet.position.x+=dx;pet.position.z+=dz;if(pet.position.y>2){pet.position.x=clamp(pet.position.x,-4.45,4.45);pet.position.z=clamp(pet.position.z,-9.45,-.52);}});
+ var maxPush=1.5*Math.max(0,Math.min(dt==null?1/60:dt,.1));people.forEach(function(a,i){var p=a.position,t=targets[i],dx=t.x-p.x,dz=t.z-p.z,d=Math.hypot(dx,dz),f=d?Math.min(1,maxPush/d):0;dx*=f;dz*=f;p.x+=dx;p.z+=dz;
+  var k=keys[i];if(!/^w/.test(k)){if(k){a.userData.avoidX=(a.userData.avoidX||0)+dx;a.userData.avoidZ=(a.userData.avoidZ||0)+dz;}return;}a.userData.collisionX=(a.userData.collisionX||0)+dx;a.userData.collisionZ=(a.userData.collisionZ||0)+dz;var prev=a.userData.collisionPrev;if(prev&&Math.abs(prev.y-p.y)<1){var mx=p.x-prev.x,mz=p.z-prev.z,dist=Math.hypot(mx,mz);if(dist>.004&&dist<1)turnTo(a,Math.atan2(mx,mz),dt||0);}var pet=W3.actors['q'+k.slice(1)];if(!pet||!pet.visible||pet.userData.alive!==W3.frame)return;pet.position.x+=dx;pet.position.z+=dz;if(pet.position.y>2){pet.position.x=clamp(pet.position.x,-4.45,4.45);pet.position.z=clamp(pet.position.z,-9.45,-.52);}});
 }
 function syncShop(dt){
  W3.frame=(W3.frame||0)+1;if(s&&!s.paused&&!s.modal)trackRate(dt);if(s.floorG){Object.keys(W3.actors).forEach(function(k){W3.actors[k].visible=false;});return;}var V=shopView(),t=s.t,ap=V?V.appts:todayAppts(),gs=V?V.gs:groomers(),busyTab={},cageI=0;
@@ -3100,8 +3103,8 @@ function syncShop(dt){
   var pick=J===(W3.jr||{})['k'+a.id];
   var o=actor(kw,function(){var m=makePerson({i:a.id,long:a.id%2});m.userData.pick={type:'owner',id:a.id};return m;});
   o.userData.label=a.owner+(J.abort?' · 取消咗預約':'');o.userData.lh=1.5;
-  var prev=o.position.clone(),jump=prev.distanceTo(J.pos)>2.5||!o.userData.walked;o.userData.collisionPrev=prev;if(jump){o.userData.collisionX=0;o.userData.collisionZ=0;}
-  var ease=Math.max(0,1-dt*1.5);o.userData.collisionX=(o.userData.collisionX||0)*ease;o.userData.collisionZ=(o.userData.collisionZ||0)*ease;
+  var prev=o.position.clone(),jump=prev.distanceTo(J.pos)>2.5||!o.userData.walked;o.userData.collisionPrev=prev;o.userData.moveTarget=J.pos;if(jump){o.userData.collisionX=0;o.userData.collisionZ=0;}
+  var ease=Math.max(0,1-dt*.35);o.userData.collisionX=(o.userData.collisionX||0)*ease;o.userData.collisionZ=(o.userData.collisionZ||0)*ease;
   o.position.copy(J.pos);o.position.x+=o.userData.collisionX;o.position.z+=o.userData.collisionZ;o.userData.walked=1;
   var moved=jump?0:Math.hypot(o.position.x-prev.x,o.position.z-prev.z);
   if(J.st==='desk')turnTo(o,Math.PI,dt);else if(jump)o.rotation.y=Math.atan2(J.dir.x,J.dir.z);else if(moved>1e-4)turnTo(o,Math.atan2(o.position.x-prev.x,o.position.z-prev.z),dt);
@@ -3128,15 +3131,15 @@ function syncShop(dt){
   m.userData.label=x.name.replace('（老闆）','');m.userData.lh=1.5;m.userData.lcls='staff';
   var gi=gs.indexOf(x),tb=SHOP.tables[(gi<0?0:gi)%SHOP.tables.length],p;
   var lunch=t>=LUNCH[0]&&t<LUNCH[1];
-  if(lunch)p=SP(SHOP.lunch[0]+(i%2)*.7,SHOP.lunch[1]+.8);
+  if(lunch)p=SP(2.5+(i%3)*.85,-2.5-Math.floor(i/3)*.85);
   else if(ap2)p=SP(tb[0],tb[1]+.75);
-  else if(x.role==='asst')p=bathing?SP(SHOP.tub[0]-1.2,SHOP.tub[1]+.2):SP(-3.2,-4.2);
+  else if(x.role==='asst')p=bathing?SP(SHOP.tub[0]-1.2+(i%2)*.85,SHOP.tub[1]+.2):SP(-3.3+(i%3)*.9,-4.2-Math.floor(i/3)*.9);
   else if(x.role==='owner')p=SP(SHOP.recep[0]+1.5,SHOP.recep[1]-.2);
-  else p=SP(tb[0]+.8,tb[1]+.9);
+  else p=gi>=SHOP.tables.length?SP(1+(gi%3)*.85,-3.7):SP(tb[0]+.8,tb[1]+.9);
   moveTo(m,p,dt);if(ap2&&!lunch)m.rotation.y=Math.PI;
  });
  Object.keys(W3.actors).forEach(function(k){var a=W3.actors[k];if(a.userData.alive!==W3.frame){a.visible=false;if(/^v?[poqw]/.test(k)){if(W3.frame-a.userData.alive>600){W3.sc.remove(a);W3.pick.splice(W3.pick.indexOf(a),1);delete W3.actors[k];}}}});
- separatePeople();
+ separatePeople(dt);
 }
 
 /* p_merge：將靜態方塊（共用顏色材質）合併成每種顏色一個 mesh，大幅減少 draw call，令畫面流暢。 */
