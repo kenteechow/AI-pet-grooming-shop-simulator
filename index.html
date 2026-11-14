@@ -1715,6 +1715,8 @@ function hasTrait(st,id){return st.trait&&st.trait.id===id;}
 /* 由員工、AI、事件組合出今週引擎參數 */
 function syncP(){
  var P=clone(s.base),gs=groomers(),as=activeStaff().filter(function(x){return x.role==='asst';});
+ /* 遊戲事件頻率：兩間店同樣增加毛孩應激機會，舊存檔亦適用。 */
+ P.stressRate*=2;
  var emp=gs.filter(function(x){return x.role==='groomer';});
  P.groomers=gs.length;P.ownerGrooms=1;
  P.groomerBase=emp.length?sum(emp.map(function(x){return x.wage;}))/emp.length:0;
@@ -1728,7 +1730,7 @@ function syncP(){
  P.lv=clone(s.lv);P.review=s.review;P.quitRate=0;
  var fr=activeStaff().filter(function(x){return x.role==='front';});P.front=fr.length;P.extraWages=sum(fr.map(function(x){return x.wage*1.05;}));
  HOOKS.sync&&HOOKS.sync.forEach(function(f){f(P);});
- var Q=clone(s.base);Q.lv=lvZero(s.base).lv;Q.groomers=s.base.groomers+s.shHires;Q.quitRate=.10;
+ var Q=clone(s.base);Q.stressRate*=2;Q.lv=lvZero(s.base).lv;Q.groomers=s.base.groomers+s.shHires;Q.quitRate=.10;
  s.mods=s.mods.filter(function(m){return m.until>s.day;});
  s.mods.forEach(function(m){[P,Q].forEach(function(X,i){if(i===1&&!m.both)return;if(m.op==='mul')X[m.k]*=m.v;else if(m.op==='add')X[m.k]+=m.v;else X[m.k]=m.v;});});
  s.S.P=P;s.sh.P=Q;
@@ -1827,7 +1829,7 @@ function advance(min){
  if(t>=DAY1)endOfDay();
 }
 var FB_GOOD=['剪得好企理，下次再嚟','準時交還，好放心','美容師好有耐性','報告卡好清楚','隻狗返到屋企好開心','價錢合理'];
-var FB_BAD={minor:'甲剪得太深，流咗少少血',skin:'返屋企之後皮膚紅咗',stress:'隻狗返到屋企好驚，唔肯食嘢',serious:'隻狗受傷要睇獸醫',wait:'等咗好耐先有位',cut:'剪得太短，同講好嘅唔同'};
+var FB_BAD={minor:'甲剪得太深，流咗少少血',skin:'返屋企之後皮膚紅咗',stress:'毛孩返到屋企好驚，唔肯食嘢',serious:'毛孩受傷要睇獸醫',wait:'等咗好耐先有位',cut:'剪得太短，同講好嘅唔同'};
 function onDone(a){
  if(a.inc)incidentCost(a);
  /* 落手做過：主人一定有反應，星數跟客人滿意度；五星口碑升少少，兩星或以下口碑跌（v0.18） */
@@ -1958,8 +1960,13 @@ var EVENTS={
       {t:'放慢啲做埋佢',pro:['唔使退錢'],con:['有機會出大事'],f:function(){if(R()<.3)queueEvent('serious',{a:{pet:'冬菇',owner:'梁太'}});else news('事件','冬菇做完，主人唔知發生咩事');}}]},
  bite:{title:'美容師被咬',body:function(){var g=emp();return (g?g.name:'美容師')+'幫一隻柴犬剪甲，手被咬傷，流咗唔少血。';},when:function(){return !!emp();},
   ai:'「檔」L2 嘅「咬人」標籤可以預先提醒戴口罩、兩個人做，但安撫寵物要靠人。',
-  ch:[{t:'即刻睇醫生，放 3 日病假',pro:['士氣升','工傷要向保險公司申報，按《僱員補償條例》處理醫藥費同病假錢'],con:['今個星期產能少約 1 成','病假期間要先照條例出錢，保險公司審核後先賠'],f:function(){addMod('capMult','mul',.88,1,false,'美容師病假');var g=emp();if(g)g.morale=Math.min(1,g.morale+.08);}},
-      {t:'包紮後叫佢頂住',pro:['產能唔受影響'],con:['士氣大跌','手唔穩，事故率升'],f:function(){var g=emp();if(g)g.morale-=.15;addMod('incidentMult','mul',1.4,2,false,'美容師手傷');}}]},
+  ch:[{t:'即刻睇醫生，放 3 日病假',pro:['士氣升','工傷要向保險公司申報，按《僱員補償條例》處理醫藥費同病假錢'],con:['下週預估產能少約 12%（本週已排嘅預約不變）','病假期間要先照條例出錢，保險公司審核後先賠'],f:function(){addMod('capMult','mul',.88,2,false,'美容師病假');var g=emp();if(g)g.morale=Math.min(1,g.morale+.08);}},
+      {t:'包紮後叫佢頂住',pro:['產能唔受影響'],con:['士氣大跌','下週事故率上升'],f:function(){var g=emp();if(g)g.morale-=.15;addMod('incidentMult','mul',1.4,2,false,'美容師手傷');}}]},
+ equipment:{title:'吹水機出現耗損',body:function(){return '店內一部吹水機用久咗，風力變弱，仲有異聲。要安排檢查或更換，否則會拖慢吹乾時間。';},
+  ai:'AI 可以幫手記錄使用時間、整理維修紀錄同提醒檢查；設備安全同實際維修仍要由人處理。',
+  ch:[{t:'停用檢查並維修',pro:['處理設備問題'],con:['維修費 HK$600（遊戲估算）','下週預估產能少 4%（本週已排嘅預約不變）'],f:function(){s.cash-=600;addMod('capMult','mul',.96,2,false,'設備維修');}},
+      {t:'更換吹水機',pro:['換上新設備'],con:['設備費 HK$1,800（遊戲估算）'],f:function(){s.cash-=1800;}},
+      {t:'暫時停用，稍後再處理',pro:['即時唔使支出'],con:['下週預估產能少 10%（本週已排嘅預約不變）'],f:function(){addMod('capMult','mul',.90,2,false,'設備停用');}}]},
  style:{title:'剪錯造型投訴',body:function(){return '黃小姐喺 IG 出 post：「隻貴婦剪到好似老鼠，同講好嘅唔同」，有 40 個 like。';},
   ai:'「影」L2 報告卡有美容前後相，L3 可以喺開剪前發參考相畀主人確認，減少誤會。',
   ch:[{t:'退一半錢，私訊道歉',pro:['口碑損失細'],con:['少收 HK$260'],f:function(){s.cash-=260;s.S.rating=Math.min(5,s.S.rating+.01);}},
@@ -2009,7 +2016,8 @@ var EVENTS={
   ch:[{t:'全數負責獸醫費，公開交代',pro:['口碑恢復得快'],con:['額外 HK$2,000'],f:function(){s.cash-=2000;s.S.rating=Math.min(5,s.S.rating+.08);}},
       {t:'只賠獸醫費',pro:['慳錢'],con:['主人喺網上講，評分跌'],f:function(){s.S.rating-=.06;}}]}
 };
-var EV_RANDOM=[['oldDog',.06],['bite',.05],['style',.06],['rent',.03],['comp',.04],['waBan',.05],['aiPrice',.3],['poach',.25],['fungus',.04],['model',.04]];
+var EV_RANDOM=[['oldDog',.08],['bite',.10],['equipment',.12],['style',.06],['rent',.03],['comp',.04],['waBan',.05],['aiPrice',.3],['poach',.25],['fungus',.04],['model',.04]];
+var EV_REPEAT={bite:28,equipment:28};
 function own(){return s.staff[0];}
 function emp(){return activeStaff().filter(function(x){return x.role==='groomer';})[0];}
 function lowMorale(){return activeStaff().filter(function(x){return x.role==='groomer'&&x.morale<.6&&x.leaving<0;})[0];}
@@ -2017,7 +2025,7 @@ function queueEvent(id,ctx){s.evQ.push({id:id,ctx:ctx||{}});if(!s.modal)nextEven
 function nextEvent(){if(s.modal||!s.evQ.length)return;var e=s.evQ.shift();s.modal={type:'event',id:e.id,ctx:e.ctx};}
 function chooseEvent(i){var m=s.modal;if(!m||m.type!=='event')return;var E=EVENTS[m.id],c=E.ch[i];s.mled=s.mled||[];var c0=s.cash,n0=s.mled.length;c.f(m.ctx);
  /* 事件直接改現金嘅部分記入一次性收支（注資、借貸等已經自己記咗） */
- var rest=s.cash-c0-sum(s.mled.slice(n0).map(function(x){return x.amt;}));if(Math.abs(rest)>.5)s.mled.push({day:s.day,amt:rest,why:E.title+'：'+c.t,cat:'event'});news('事件',E.title+'：你揀咗「'+c.t+'」');s.evSeen[m.id]=(s.evSeen[m.id]||0)+1;s.modal=null;nextEvent();}
+ var rest=s.cash-c0-sum(s.mled.slice(n0).map(function(x){return x.amt;}));if(Math.abs(rest)>.5)s.mled.push({day:s.day,amt:rest,why:E.title+'：'+c.t,cat:'event'});news('事件',E.title+'：你揀咗「'+c.t+'」');s.evSeen[m.id]=(s.evSeen[m.id]||0)+1;s.evLast=s.evLast||{};s.evLast[m.id]=s.day;s.modal=null;nextEvent();}
 function dayEvents(){
  var d=s.day,dt=dateOf(d),mo=dt.getMonth()+1,dd=dt.getDate();
  if(d===8&&!s.evSeen.afterhours&&!s.lv.reply)queueEvent('afterhours');
@@ -2027,7 +2035,7 @@ function dayEvents(){
  if((mo===3||mo===9)&&dd===15)queueEvent('shed');
  if(mo===5&&dd===20)queueEvent('humid');
  if(mo>=7&&mo<=9&&!s.demoFF&&R()<.025)queueEvent('typhoon');
- if(d%7===0&&d>=14&&!s.demoFF){var cand=EV_RANDOM.filter(function(x){var E=EVENTS[x[0]];return (!E.when||E.when())&&(x[0]!=='rent'||d>=180)&&(s.evSeen[x[0]]||0)<3;});
+ if(d%7===0&&d>=14&&!s.demoFF){var cand=EV_RANDOM.filter(function(x){var E=EVENTS[x[0]],last=s.evLast&&s.evLast[x[0]],repeat=EV_REPEAT[x[0]];return (!E.when||E.when())&&(x[0]!=='rent'||d>=180)&&(repeat?(last==null||d-last>=repeat):(s.evSeen[x[0]]||0)<3);});
   for(var i=0;i<cand.length;i++){if(R()<cand[i][1]){queueEvent(cand[i][0]);break;}}}
 }
 
@@ -3050,6 +3058,8 @@ function moveTo(a,p,dt,inst,v){var human=a.userData.pick&&(a.userData.pick.type=
  var d=p.clone().sub(a.position);d.y=0;var len=d.length(),sp=(v||staffV())*dt,moved=0;
  if(inst||len>12){a.position.copy(p);}else if(len<=sp){moved=len;a.position.copy(p);}else{moved=sp;a.position.add(d.normalize().multiplyScalar(sp));a.position.y=p.y;turnTo(a,Math.atan2(d.x,d.z),dt);}
  if(a.userData.legs)stride(a,moved,dt);}
+/* 街邊碰撞避讓不可將人推入地舖；樓梯入口留空畀客人。 */
+function constrainStreetPerson(p,key){if(p.y>1)return;if(p.z>-.5&&p.z<6&&!(key&&/^w/.test(key)&&p.x>-4.65&&p.x<-3.65))p.z=Math.max(.65,p.z);else if(p.z>13)p.z=Math.min(17.4,p.z);}
 /* 人物用水平圓形碰撞體；樓上同街道分開計，避免不同樓層互相推開。 */
 function separatePeople(dt){var people=[],targets=[],keys=[];Object.keys(W3.actors).sort().forEach(function(k){var a=W3.actors[k],p=a.userData.pick;if(a.visible&&a.userData.alive===W3.frame&&p&&(p.type==='staff'||p.type==='owner')){people.push(a);keys.push(k);}});
  (W3.peds||[]).concat(W3.cross||[]).forEach(function(a){if(a.visible){people.push(a);keys.push('');}});people.forEach(function(a){targets.push(a.position.clone());});
@@ -3059,10 +3069,10 @@ function separatePeople(dt){var people=[],targets=[],keys=[];Object.keys(W3.acto
    var ta=people[i].userData.moveTarget,tb=people[j].userData.moveTarget;
    if(ta&&tb&&(ta.x-a.x)*dx+(ta.z-a.z)*dz>.1&&(tb.x-b.x)*dx+(tb.z-b.z)*dz<-.1){var sx=dx-dz*.7,sz=dz+dx*.7,sl=Math.hypot(sx,sz);dx=sx/sl;dz=sz/sl;}
    var push=(minDist-d)/2;a.x-=dx*push;a.z-=dz*push;b.x+=dx*push;b.z+=dz*push;
-   [a,b].forEach(function(p){if(p.y>2){p.x=clamp(p.x,-4.45,4.45);p.z=clamp(p.z,-9.45,-.52);}});changed=true;
+   [a,b].forEach(function(p,n){if(p.y>2){p.x=clamp(p.x,-4.45,4.45);p.z=clamp(p.z,-9.45,-.52);}else constrainStreetPerson(p,keys[n?j:i]);});changed=true;
   }if(!changed)break;
  }
- var maxPush=1.5*Math.max(0,Math.min(dt==null?1/60:dt,.1));people.forEach(function(a,i){var p=a.position,t=targets[i],dx=t.x-p.x,dz=t.z-p.z,d=Math.hypot(dx,dz),f=d?Math.min(1,maxPush/d):0;dx*=f;dz*=f;p.x+=dx;p.z+=dz;
+ var maxPush=1.5*Math.max(0,Math.min(dt==null?1/60:dt,.1));people.forEach(function(a,i){var p=a.position,t=targets[i],ox=p.x,oz=p.z,dx=t.x-p.x,dz=t.z-p.z,d=Math.hypot(dx,dz),f=d?Math.min(1,maxPush/d):0;dx*=f;dz*=f;p.x+=dx;p.z+=dz;constrainStreetPerson(p,keys[i]);dx=p.x-ox;dz=p.z-oz;
   var k=keys[i];if(!/^w/.test(k)){if(k){a.userData.avoidX=(a.userData.avoidX||0)+dx;a.userData.avoidZ=(a.userData.avoidZ||0)+dz;}return;}a.userData.collisionX=(a.userData.collisionX||0)+dx;a.userData.collisionZ=(a.userData.collisionZ||0)+dz;var prev=a.userData.collisionPrev;if(prev&&Math.abs(prev.y-p.y)<1){var mx=p.x-prev.x,mz=p.z-prev.z,dist=Math.hypot(mx,mz);if(dist>.004&&dist<1)turnTo(a,Math.atan2(mx,mz),dt||0);}var pet=W3.actors['q'+k.slice(1)];if(!pet||!pet.visible||pet.userData.alive!==W3.frame)return;pet.position.x+=dx;pet.position.z+=dz;if(pet.position.y>2){pet.position.x=clamp(pet.position.x,-4.45,4.45);pet.position.z=clamp(pet.position.z,-9.45,-.52);}});
 }
 function syncShop(dt){
@@ -3105,7 +3115,7 @@ function syncShop(dt){
   o.userData.label=a.owner+(J.abort?' · 取消咗預約':'');o.userData.lh=1.5;
   var prev=o.position.clone(),jump=prev.distanceTo(J.pos)>2.5||!o.userData.walked;o.userData.collisionPrev=prev;o.userData.moveTarget=J.pos;if(jump){o.userData.collisionX=0;o.userData.collisionZ=0;}
   var ease=Math.max(0,1-dt*.35);o.userData.collisionX=(o.userData.collisionX||0)*ease;o.userData.collisionZ=(o.userData.collisionZ||0)*ease;
-  o.position.copy(J.pos);o.position.x+=o.userData.collisionX;o.position.z+=o.userData.collisionZ;o.userData.walked=1;
+  o.position.copy(J.pos);o.position.x+=o.userData.collisionX;o.position.z+=o.userData.collisionZ;constrainStreetPerson(o.position,kw);o.userData.walked=1;
   var moved=jump?0:Math.hypot(o.position.x-prev.x,o.position.z-prev.z);
   if(J.st==='desk')turnTo(o,Math.PI,dt);else if(jump)o.rotation.y=Math.atan2(J.dir.x,J.dir.z);else if(moved>1e-4)turnTo(o,Math.atan2(o.position.x-prev.x,o.position.z-prev.z),dt);
   stride(o,moved,dt);
