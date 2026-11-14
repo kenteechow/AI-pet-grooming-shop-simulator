@@ -751,6 +751,14 @@ dt{color:var(--muted)}dd{margin:0}
 #game .staff-shift b,#game .staff-shift small{display:block}
 #game .staff-shift small{font-size:10px;overflow-wrap:anywhere}
 #game .staff-shifts>small{color:var(--muted)}
+#game .capacity-card{margin:0 0 14px;padding:14px;border-radius:14px;background:rgba(77,184,157,.09);border:1px solid rgba(110,220,185,.25)}
+#game .capacity-card p{margin:8px 0;line-height:1.5}
+#game .capacity-head{display:flex;align-items:start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#game .capacity-head small{display:block;color:var(--muted);margin-top:3px}
+#game .capacity-limit{color:#7de1b4;font-size:12px}
+#game .capacity-row{display:grid;grid-template-columns:minmax(130px,1.3fr) minmax(45px,2fr) 48px;align-items:center;gap:9px;margin:7px 0;font-size:12px}
+#game .capacity-row strong{text-align:right}
+#game .capacity-compare{margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05)}
 @media(max-width:520px){#game .staff-shift-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 #game .ain small.aieff{white-space:normal;overflow:visible;text-overflow:clip}
 #game .story-tl{display:grid;gap:10px;margin-top:10px}
@@ -993,6 +1001,8 @@ function shopStep(S){
  SEGS.forEach(function(g){gAvg+=g.share*g.g*(1+g.mat*.5);aAvg+=g.share*g.a;base+=g.share*g.price;beh+=g.share*g.beh;});
  var C=Math.min(G/gAvg,(G+A)/(gAvg+aAvg),P.tables*7*dayMin*P.capMult/gAvg,P.tubs*7*dayMin/(aAvg*.6));
  C=Math.max(0,C);
+ var capParts=[G/gAvg,(G+A)/(gAvg+aAvg),P.tables*7*dayMin*P.capMult/gAvg,P.tubs*7*dayMin/(aAvg*.6)];
+ var capNoAssistant=Math.max(0,Math.min(capParts[0],G/(gAvg+aAvg),capParts[2],capParts[3]));
  /* 會員 */
  var m=P.memberShare,inc=1-P.memberAnyway;
  var fmult=1/(1-inc*(1-P.memberCyc));
@@ -1112,7 +1122,7 @@ function shopStep(S){
   wages:wages+mpf+asst,fixed:fixed,consum:consum+card,aiCost:aiCost,msgCost:msgCost,refunds:refunds,setup:setupCost,
   act:sum(S.act),dorm:sum(S.dorm),dues:dues,rebook:rebook,recovered:recovered,react:R,lostDue:lostDue,followLost:followLost,
   ret:dues>0?rebook/dues:0,retFirst:dueT>0?rbT/dueT:null,retReg:dues-dueT>0?(rebook-rbT)/(dues-dueT):0,trial:sum(S.trial),rating:S.rating,minor:minor,skin:skin,stress:stress,serious:serious,complaints:complaints,errN:errN,
-  adminH:admin/60,comp:comp,members:m*sum(S.act),quits:quits,gVac:S.gVac,mv:mv};
+  adminH:admin/60,comp:comp,members:m*sum(S.act),quits:quits,gVac:S.gVac,mv:mv,capParts:capParts,capNoAssistant:capNoAssistant,capAssistantH:P.assistantH};
  var X=expCalc(S,util,minor+skin+stress+serious,done,err);for(var xk in X)h[xk]=X[xk];S.expScore=X.expScore;
  S.hist.push(h);return h;
 }
@@ -3615,6 +3625,10 @@ function renderPanel(){
 function subBadge(id,sub){if(id==='staff'&&sub==='hire'&&s.cands.length)return s.cands.length+' 份 CV';if(id==='ai'){var r=roleDef(sub);if(r&&s.lv[sub])return 'L'+s.lv[sub];}if(id==='cust'&&sub==='fb'){var n=s.fb.filter(function(f){return !f.good&&s.day-f.day<7;}).length;return n?n+' 個投訴':'';}return '';}
 
 /* ---------- 排程 ---------- */
+function capacityInfo(){var h=s.wk&&s.wk.h;if(!h||!Array.isArray(h.capParts)||h.capNoAssistant==null)return '<div class="capacity-card"><b>本週產能拆解</b><p class="note">呢個存檔嘅本週資料未有產能拆解；到下星期排程更新後就會顯示。</p></div>';
+ var labels=['美容師時間','美容師＋助理總工時','美容枱','浴缸'],parts=h.capParts,low=Math.min.apply(null,parts),limit=labels.filter(function(_,i){return Math.abs(parts[i]-low)<.001;}),gain=Math.max(0,h.cap-h.capNoAssistant),max=Math.max.apply(null,parts.concat([1]));
+ var cards=parts.map(function(v,i){var bottleneck=Math.abs(v-low)<.001;return '<div class="capacity-row"><span>'+labels[i]+(bottleneck?' <b class="capacity-limit">最緊</b>':'')+'</span><span class="bar"><i style="width:'+Math.max(0,Math.min(100,v/max*100)).toFixed(1)+'%"></i></span><strong class="num">'+v.toFixed(1)+'</strong></div>';}).join('');
+ return '<div class="capacity-card"><div class="capacity-head"><div><b>本週產能：最多約 '+h.cap.toFixed(1)+' 隻</b><small>模型估算／週，唔等於實際完成數</small></div><span class="capacity-limit">目前最緊：'+limit.join('、')+'</span></div><p>各項可承受嘅估計上限（隻／週），取最細嘅一項：</p>'+cards+'<div class="capacity-compare"><b>助理有咩用？</b><p>同一個模型、其他條件不變：冇助理約 <b>'+h.capNoAssistant.toFixed(1)+'</b> 隻／週；有助理 '+h.capAssistantH.toFixed(1)+' 小時／週約 <b>'+h.cap.toFixed(1)+'</b> 隻／週。'+(gain<.05?'目前其他條件同樣限制產能，助理未令總上限提高。':'模型上限相差約 '+gain.toFixed(1)+' 隻／週，並非保證增加嘅實際服務量。')+'</p></div><p class="note">呢個係模型按整週工時同平均服務組合估算；實際接到幾多隻，仲要睇客量、休息日及每日空檔。助理唔能夠獨立佔一張美容枱；目前唔會逐張預約縮短服務時間。請人或更改設定後，下一週模型先會更新。</p></div>';}
 function pSched(sub){
  var w=s.wk,h='';
  var tog='<div class="schtop"><label class="sw"><input type="checkbox" checked disabled> 自動排程：開</label><span class="note">每星期一排一次；你手動調過嘅唔會被重排</span><label class="sw"><input type="checkbox" data-act="autofill" '+(s.autoFill!==0?'checked':'')+'> 自動補候補</label><span class="note">'+((s.lv.sched||0)>=2?'AI 自動 WhatsApp 候補客':'冇 AI：你每個打約 5 分鐘電話')+'，每朝補今日同聽日嘅空檔；而家候補 '+Math.floor(s.S.backlog)+' 位</span><span class="sp"></span>'+
@@ -3637,7 +3651,7 @@ function pSched(sub){
   return out+'</div></div>';}
  var wd='',we='';for(var d=w.start;d<w.start+7;d++){if(d%7<5)wd+=dayRows(d);else we+=dayRows(d);}
  var cov=SEGS.map(function(g){var n=w.appts.filter(function(a){return a.seg===g.id&&a.st!=='lost';}).length;return '<span class="cov'+(n?'':' zero')+'">'+g.name+' <b class="num">'+n+'</b></span>';}).join('');
- h=tog+detail+'<div class="sgrid"><div class="ticks">'+ticks+'</div><h4>平日</h4>'+wd+'<h4>週末</h4>'+we+'</div>'+
+ h=tog+capacityInfo()+detail+'<div class="sgrid"><div class="ticks">'+ticks+'</div><h4>平日</h4>'+wd+'<h4>週末</h4>'+we+'</div>'+
   '<div class="covr"><b>覆蓋表（本週）</b>'+cov+'</div><p class="note">拖預約去空格＝調時間或者換人；拖去另一個預約＝互換；撳空格可以由候補名單（而家 '+Math.floor(s.S.backlog)+' 位）加人。本週預約 '+w.appts.length+' 個，因為冇位改咗日 '+w.appts.filter(function(a){return a.moved;}).length+' 個，完全冇位流失 '+w.lost+' 個。灰色「行政」係老闆覆 WhatsApp、排程、對數嘅時間；部署 AI 之後會縮短。</p>';
  return h;
 }
@@ -3687,7 +3701,7 @@ function pStaff(sub){
  if(sub==='hire')return '<p>每星期一更新 3 份 CV。請咗下星期一返工；入職 3 週後先知佢真正特點。全職按營業時間返工；兼職按每週時數分配班次，請人後可睇本週時間。</p><div class="cards2">'+s.cands.map(function(c){
   return '<div class="scard"><div class="sc-top"><b>'+esc(c.name)+'</b><span class="pill">'+(c.role==='groomer'?'美容師':'兼職助理')+'</span></div><dl><dt>證書</dt><dd>'+esc(c.cert)+'</dd><dt>經驗</dt><dd>'+esc(c.exp)+'</dd><dt>人工</dt><dd class="num">'+(c.role==='groomer'?hk(c.wage)+'／月＋每隻 '+hk(c.comm):hk(c.rate)+'／小時 × '+c.hoursW+' 小時')+'</dd><dt>返工</dt><dd>每週 6 日，星期'+WKD[c.off===0?3:c.off]+'休息</dd><dt>面試印象</dt><dd>'+esc(c.trait.hint)+'</dd></dl>'+
   '<button class="btn pri" data-act="hire" data-id="'+c.id+'">請（下星期一返工）</button></div>';}).join('')+'</div>'+(s.cands.length?'':'<p class="note">今個星期冇 CV，下星期一再睇。</p>');
- return '<p class="note">本週班表：全職按營業時間上班；兼職按每週時數平均分配到工作日，人物只會喺班次內出現。助理對產能嘅影響按每週總時數估算，唔逐分鐘計。</p><div class="cards2">'+s.staff.filter(function(x){return x.leaving!==-2;}).map(function(x){var hw=staffHours(x),mr=x.morale;
+ return capacityInfo()+'<p class="note">本週班表：全職按營業時間上班；兼職按每週時數平均分配到工作日，人物只會喺班次內出現。助理對產能嘅影響按每週總時數估算，唔逐分鐘計。</p><div class="cards2">'+s.staff.filter(function(x){return x.leaving!==-2;}).map(function(x){var hw=staffHours(x),mr=x.morale;
   return '<div class="scard"><div class="sc-top"><b>'+esc(x.name)+'</b><span class="pill">'+roleName(x)+'</span>'+(x.leaving>=0?'<span class="pill red">'+dateStr(x.leaving).replace(/^\d+年/,'')+'走</span>':'')+(x.joined>s.day?'<span class="pill">下週返工</span>':'')+'</div>'+
   '<dl><dt>證書</dt><dd>'+esc(x.cert)+'</dd><dt>經驗</dt><dd>'+esc(x.exp)+'</dd><dt>人工</dt><dd class="num">'+(x.role==='owner'?'食利潤':x.role==='groomer'?hk(x.wage)+'／月＋每隻 '+hk(x.comm):x.role==='front'?hk(x.wage)+'／月':hk(x.rate)+'／小時 × 每週 '+x.hoursW+' 小時')+'</dd><dt>休息日</dt><dd class="offd">'+offSel(x)+'</dd>'+
   '<dt>本週工作量（估算）</dt><dd class="num">'+hw.used.toFixed(1)+' / '+hw.avail.toFixed(0)+' 小時</dd><dt>特點</dt><dd>'+(x.shown&&x.trait?'<b>'+esc(x.trait.n)+'</b>：'+esc(x.trait.d):x.trait?'未知（入職 3 週後顯露）':'—')+'</dd></dl>'+
